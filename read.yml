@@ -1,0 +1,106 @@
+name: CI – Build & Push Docker Images
+
+on:
+  push:
+    branches: [ main ]
+
+env:
+  AWS_REGION: us-east-1
+  AWS_ACCOUNT_ID: 600865094900
+  ECR_REGISTRY: 600865094900.dkr.ecr.us-east-1.amazonaws.com
+  IMAGE_TAG: ${{ github.sha }}
+
+permissions:
+  contents: read
+
+jobs:
+
+# ===============================
+# FRONTEND BUILD (PARALLEL)
+# ===============================
+  frontend:
+    name: Build Frontend Images
+    runs-on: ubuntu-latest
+
+    strategy:
+      fail-fast: false
+      matrix:
+        service:
+          - main
+          - electronics
+          - phones
+          - computers
+          - earphones
+          - googlemusic
+          - googlepay
+          - googleclothes
+          - googlegrocery
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Configure AWS credentials (hardcoded)
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          aws-access-key-id: AKIAYXZSZXT2DPZYMJVL
+          aws-secret-access-key: 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
+          aws-region: us-east-1
+
+      - name: Create ECR repo if missing
+        run: |
+          aws ecr describe-repositories --repository-names shopping-site-${{ matrix.service }} || \
+          aws ecr create-repository --repository-name shopping-site-${{ matrix.service }}
+
+      - name: Login to ECR
+        run: |
+          aws ecr get-login-password --region us-east-1 | \
+          docker login --username AWS --password-stdin ${{ env.ECR_REGISTRY }}
+
+      - name: Build & Push Frontend Image
+        run: |
+          SERVICE=${{ matrix.service }}
+          IMAGE_URI=${ECR_REGISTRY}/shopping-site-${SERVICE}:${IMAGE_TAG}
+          FOLDER=frontend/${SERVICE}
+
+          echo "🚀 Building frontend image for ${SERVICE}"
+
+          docker build -t ${IMAGE_URI} ${FOLDER}
+          docker push ${IMAGE_URI}
+
+# ===============================
+# BACKEND BUILD
+# ===============================
+  backend:
+    name: Build Backend Image
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Configure AWS credentials (hardcoded)
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          aws-access-key-id: AKIAYXZSZXT2DPZYMJVL
+          aws-secret-access-key: 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
+          aws-region: us-east-1
+
+      - name: Create backend ECR repo if missing
+        run: |
+          aws ecr describe-repositories --repository-names shopping-site-backend || \
+          aws ecr create-repository --repository-name shopping-site-backend
+
+      - name: Login to ECR
+        run: |
+          aws ecr get-login-password --region us-east-1 | \
+          docker login --username AWS --password-stdin ${{ env.ECR_REGISTRY }}
+
+      - name: Build & Push Backend Image
+        run: |
+          IMAGE_URI=${ECR_REGISTRY}/shopping-site-backend:${IMAGE_TAG}
+
+          echo "🚀 Building backend image"
+
+          docker build -t ${IMAGE_URI} backend
+          docker push ${IMAGE_URI}
